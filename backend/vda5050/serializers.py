@@ -25,7 +25,7 @@ class OrderSerializer(serializers.ModelSerializer):
         """
         Validate after save to DB
         """
-        # Kiểm tra xem nodes/edges có phải list không
+        # Check that nodes and edges are lists
         if not isinstance(data.get('nodes', []), list):
             raise serializers.ValidationError({"nodes": "Must be a list of nodes."})
         if not isinstance(data.get('edges', []), list):

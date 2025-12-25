@@ -9,24 +9,24 @@ from .models import Order, InstantAction
 
 logger = logging.getLogger(__name__)
 
-# Lấy cấu hình từ biến môi trường (trong Docker là 'mqtt', chạy ngoài là 'localhost')
+# Get MQTT configuration from environment variables
 MQTT_BROKER = os.environ.get('MQTT_BROKER', 'mqtt')
 MQTT_PORT = int(os.environ.get('MQTT_PORT', '1883'))
 
 def publish_mqtt_message(topic, payload, description):
-    """Hàm chung để gửi MQTT an toàn"""
+    """Common function to safely send MQTT messages"""
     client_id = f"django_pub_{uuid.uuid4().hex[:8]}" 
     client = mqtt.Client(client_id=client_id)
     
     try:
-        # 1. Kết nối
+        # 1. Connect
         logger.info(f"Connecting to Broker {MQTT_BROKER}:{MQTT_PORT}...")
         client.connect(MQTT_BROKER, MQTT_PORT, 5) 
         
-        # 2. Gửi tin
+        # 2. Publish message
         client.publish(topic, json.dumps(payload), qos=1)
         
-        # 3. Ngắt kết nối
+        # 3. Disconnect
         client.disconnect()
         logger.info(f"Sent {description} to {topic}")
         return True
@@ -56,7 +56,7 @@ def on_order_created(sender, instance, created, **kwargs):
         }
 
         if publish_mqtt_message(topic, payload, f"Order {instance.order_id}"):
-            # Cập nhật trạng thái SENT
+            # Update status to SENT
             Order.objects.filter(pk=instance.pk).update(status='SENT')
 
 # --- SIGNAL: SEND INSTANT ACTION ---
@@ -82,8 +82,8 @@ def on_action_created(sender, instance, created, **kwargs):
             ]
         }
 
-        # Nếu gửi thành công thì mới update DB
+        # If successfully sent, then update DB
         if publish_mqtt_message(topic, payload, f"Action {instance.action_type}"):
-            # Dùng .update() để ghi trực tiếp vào DB, tránh race condition
+            # Use .update() to write directly to DB, avoiding race condition
             InstantAction.objects.filter(pk=instance.pk).update(is_sent=True)
             logger.info(f"Database updated: InstantAction {instance.action_id} marked as SENT")

@@ -1,4 +1,3 @@
-# mock_agv.py (Phiên bản 3 - Tự lái)
 import json
 import time
 import uuid
@@ -8,7 +7,7 @@ import paho.mqtt.client as mqtt
 # --- CẤU HÌNH ---
 BROKER = "127.0.0.1"
 PORT = 1884
-MANUFACTURER = "KUKA"
+MANUFACTURER = "HUST"
 SERIAL_NUMBER = "AGV_01"
 
 TOPIC_CONNECTION = f"uagv/v2/{MANUFACTURER}/{SERIAL_NUMBER}/connection"
@@ -22,7 +21,7 @@ current_state = {
     "lastNodeId": "Node_A",
     "lastNodeSequenceId": 0,
     "driving": False,
-    "nodes_to_visit": [], # Danh sách các điểm cần đi
+    "nodes_to_visit": [], 
     "battery": 100.0,
     "x": 0, "y": 0
 }

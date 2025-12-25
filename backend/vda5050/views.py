@@ -25,8 +25,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
 class TaskViewSet(viewsets.ViewSet):
     """
-    API để giao việc cho AGV (Simplified Order Creation)
-    User chỉ cần gửi đích đến, Server tự tính đường.
+    API endpoint to create transport tasks for AGVs.
     """
     def create(self, request):
         """
@@ -38,11 +37,11 @@ class TaskViewSet(viewsets.ViewSet):
 
         if not serial_number or not target_node_id:
             return Response(
-                {"error": "Thiếu serial_number hoặc target_node_id"}, 
+                {"error": "Missing serial_number or target_node_id"}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Gọi Scheduler xử lý
+        # Call Scheduler to process
         scheduler = Scheduler()
         result = scheduler.create_transport_order(serial_number, target_node_id)
 

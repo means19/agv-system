@@ -116,21 +116,21 @@ class Command(BaseCommand):
             information=payload.get('information', {})
         )
 
-        # 3. Cập nhật trạng thái Order và xử lý Queue
-        # Dùng order_id từ payload để xác định order đang chạy
+        # 3. Update Order status based on AGVState
+        # Use order_id from payload to identify the running order
         current_order_id = payload.get('orderId')
 
-        # Nếu xe đang chạy Order (có ID)
+        # If the AGV is running an Order (has ID)
         if state.order_id:
             self.update_order_status(agv, state, current_order_id)
         
-        # Trường hợp đặc biệt: Xe báo về mà không có orderId (đã hoàn thành xong xuôi)
-        # Hoặc vừa hoàn thành xong lệnh, ta cũng check queue một lần
+        # Special case: AGV reports without orderId (finished)
+        # Or just finished an order, check queue once more
         if not state.driving and (not current_order_id or current_order_id == ""):
              self.check_and_process_queue(agv)
 
     def update_order_status(self, agv, state, current_order_id):
-        """Logic cập nhật trạng thái Order và kích hoạt Queue nếu xong"""
+        """Logic to update Order status and trigger Queue if done"""
         try:
             order = Order.objects.get(order_id=current_order_id, agv=agv)
             
@@ -182,7 +182,7 @@ class Command(BaseCommand):
         next_order = Order.objects.filter(agv=agv, status='QUEUED').order_by('created_at').first()
         
         if next_order:
-            logger.info(f"🔄 Found queued order {next_order.order_id} for {agv.serial_number}. Dispatching now...")
+            logger.info(f"Found queued order {next_order.order_id} for {agv.serial_number}. Dispatching now...")
             
             # Send this order
             self.publish_order(next_order)

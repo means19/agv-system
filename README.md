@@ -98,13 +98,6 @@ python mock_agv.py
 
 ## 📝 Development
 
-### File Sizes (Lines of Code)
-- `models.py`: 189 lines - Core data models
-- `run_mqtt_listener.py`: 231 lines - MQTT worker
-- `scheduler.py`: 95 lines - Order scheduling logic
-- `graph_engine.py`: 80 lines - Pathfinding
-- `signals.py`: 82 lines - Auto-publish logic
-
 ### Technology Stack
 - Django 4.2+
 - Django REST Framework 3.14+

@@ -28,6 +28,25 @@ class GraphEngine:
             if not e.is_directed:
                 self.graph.add_edge(v, u, weight=e.length, obj=e)
 
+    def get_path_cost(self, start_node, end_node):
+        """
+        Calculate the cost of the shortest path between two nodes.
+        """
+        try:
+            # Calculate the length of the shortest path (with 'weight' as the edge length)
+            length = nx.shortest_path_length(
+                self.graph, 
+                source=start_node, 
+                target=end_node, 
+                weight='weight'
+            )
+            return length
+        except nx.NetworkXNoPath:
+            return float('inf') # Infinite cost if no path exists
+        except Exception as e:
+            print(f"Error calculating cost: {e}")
+            return float('inf')
+
     def get_path(self, start_node_id, end_node_id):
         """
         Algorithm 1: Calculate Baseline (using Dijkstra).

@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from .models import AGV, Order, AGVState
 from .serializers import AGVSerializer, OrderSerializer, AGVStateSerializer
 from .modules.scheduler import Scheduler
+from .modules.bidding import BiddingEngine
 
 class AGVViewSet(viewsets.ModelViewSet):
     queryset = AGV.objects.all()
@@ -30,22 +31,32 @@ class TaskViewSet(viewsets.ViewSet):
     def create(self, request):
         """
         POST /api/tasks/
-        Body: { "serial_number": "AGV_01", "target_node_id": "Node_C" }
+        Body: { "target_node_id": "Node_C" }
         """
-        serial_number = request.data.get('serial_number')
         target_node_id = request.data.get('target_node_id')
 
-        if not serial_number or not target_node_id:
+        if not target_node_id:
             return Response(
-                {"error": "Missing serial_number or target_node_id"}, 
+                {"error": "Missing target_node_id"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Run Bidding Engine to select the best AGV
+        bid_engine = BiddingEngine()
+        winner_agv, error = bid_engine.run_auction(target_node_id)
+
+        if not winner_agv:
+            return Response(
+                {"error": f"No suitable AGV found: {error}"}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         # Call Scheduler to process
         scheduler = Scheduler()
-        result = scheduler.create_transport_order(serial_number, target_node_id)
+        result = scheduler.create_transport_order(winner_agv.serial_number, target_node_id)
 
         if result['success']:
+            result["winner_agv"] = winner_agv.serial_number
             return Response(result, status=status.HTTP_201_CREATED)
         else:
             return Response(result, status=status.HTTP_400_BAD_REQUEST)

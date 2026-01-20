@@ -167,13 +167,14 @@ class BidCalculator:
             'wait_time_s': wait_time
         }
     
-    def calculate_marginal_cost(self, agv, target_node_id, load_kg=DEFAULT_LOAD_KG):
+    def calculate_marginal_cost(self, agv, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG):
         """
         Tính marginal cost (chi phí biên) cho một AGV.
         
         Args:
             agv: AGV instance
-            target_node_id: Node đích của task mới
+            pickup_node_id: Node lấy hàng
+            delivery_node_id: Node giao hàng (nếu None, chỉ đi đến pickup)
             load_kg: Tải trọng
             
         Returns:
@@ -203,26 +204,59 @@ class BidCalculator:
         start_node = wait_info['start_node']
         wait_time = wait_info['wait_time_s']
         
-        # Bước 4: Tính khoảng cách thực tế từ start_node → target
-        actual_distance = self.graph_engine.get_path_cost(start_node, target_node_id)
-        
-        if actual_distance == float('inf'):
-            logger.warning(f"AGV {agv.serial_number}: No path {start_node}→{target_node_id}")
-            return None
-        
-        # Bước 5: Tính metrics thực tế
-        energy_travel, time_travel = self.transport_calculator.calculate_metrics(
-            actual_distance, load_kg
-        )
-        
-        # Marginal time = wait time + travel time
-        time_marginal = wait_time + time_travel
-        energy_marginal = energy_travel  # Energy chỉ tính phần di chuyển
-        
-        # Bước 6: Chuẩn hóa với baseline
-        baseline_result = self.baseline_calculator.calculate_and_normalize(
-            start_node, target_node_id, actual_distance, load_kg
-        )
+        # Bước 4: Tính chi phí cho từng chặng
+        if delivery_node_id:
+            # 2-leg trip: current -> pickup -> delivery
+            # Leg 1: current -> pickup (không mang hàng)
+            distance_leg1 = self.graph_engine.get_path_cost(start_node, pickup_node_id)
+            if distance_leg1 == float('inf'):
+                logger.warning(f"AGV {agv.serial_number}: No path {start_node}→{pickup_node_id}")
+                return None
+            
+            energy_leg1, time_leg1 = self.transport_calculator.calculate_metrics(
+                distance_leg1, 0  # Không mang hàng
+            )
+            
+            # Leg 2: pickup -> delivery (mang hàng)
+            distance_leg2 = self.graph_engine.get_path_cost(pickup_node_id, delivery_node_id)
+            if distance_leg2 == float('inf'):
+                logger.warning(f"AGV {agv.serial_number}: No path {pickup_node_id}→{delivery_node_id}")
+                return None
+            
+            energy_leg2, time_leg2 = self.transport_calculator.calculate_metrics(
+                distance_leg2, load_kg  # Mang hàng
+            )
+            
+            # Tổng chi phí
+            energy_marginal = energy_leg1 + energy_leg2
+            time_marginal = wait_time + time_leg1 + time_leg2
+            total_distance = distance_leg1 + distance_leg2
+            
+            # Chuẩn hóa với baseline (sử dụng khoảng cách trực tiếp từ start đến delivery)
+            baseline_result = self.baseline_calculator.calculate_and_normalize(
+                start_node, delivery_node_id, total_distance, load_kg
+            )
+        else:
+            # Single-leg trip: current -> pickup
+            actual_distance = self.graph_engine.get_path_cost(start_node, pickup_node_id)
+            
+            if actual_distance == float('inf'):
+                logger.warning(f"AGV {agv.serial_number}: No path {start_node}→{pickup_node_id}")
+                return None
+            
+            # Tính metrics thực tế
+            energy_travel, time_travel = self.transport_calculator.calculate_metrics(
+                actual_distance, load_kg
+            )
+            
+            # Marginal time = wait time + travel time
+            time_marginal = wait_time + time_travel
+            energy_marginal = energy_travel  # Energy chỉ tính phần di chuyển
+            
+            # Bước 5: Chuẩn hóa với baseline
+            baseline_result = self.baseline_calculator.calculate_and_normalize(
+                start_node, pickup_node_id, actual_distance, load_kg
+            )
         
         return {
             'energy_marginal': energy_marginal,
@@ -270,13 +304,14 @@ class BidCalculator:
         
         return bid_final
     
-    def calculate_full_bid(self, agv, target_node_id, load_kg=DEFAULT_LOAD_KG):
+    def calculate_full_bid(self, agv, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG):
         """
         Tính toán bid đầy đủ cho một AGV (all-in-one).
         
         Args:
             agv: AGV instance
-            target_node_id: Node đích
+            pickup_node_id: Node lấy hàng
+            delivery_node_id: Node giao hàng (nếu None, chỉ đi đến pickup)
             load_kg: Tải trọng
             
         Returns:
@@ -289,7 +324,7 @@ class BidCalculator:
             } hoặc None nếu không thể bid
         """
         # Tính marginal cost
-        marginal_result = self.calculate_marginal_cost(agv, target_node_id, load_kg)
+        marginal_result = self.calculate_marginal_cost(agv, pickup_node_id, delivery_node_id, load_kg)
         
         if not marginal_result:
             logger.info(f"AGV {agv.serial_number}: Cannot bid (no valid marginal cost)")

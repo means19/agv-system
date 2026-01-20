@@ -31,19 +31,23 @@ class TaskViewSet(viewsets.ViewSet):
     def create(self, request):
         """
         POST /api/tasks/
-        Body: { "target_node_id": "Node_C" }
+        Body: { 
+            "pickup_node_id": "Node_A",   # Điểm lấy hàng
+            "delivery_node_id": "Node_C"  # Điểm giao hàng
+        }
         """
-        target_node_id = request.data.get('target_node_id')
+        pickup_node_id = request.data.get('pickup_node_id')
+        delivery_node_id = request.data.get('delivery_node_id')
 
-        if not target_node_id:
+        if not pickup_node_id or not delivery_node_id:
             return Response(
-                {"error": "Missing target_node_id"}, 
+                {"error": "Missing pickup_node_id or delivery_node_id"}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         # Run Bidding Engine to select the best AGV
         bid_engine = BiddingEngine()
-        winner_agv, error = bid_engine.run_auction(target_node_id)
+        winner_agv, error = bid_engine.run_auction(pickup_node_id, delivery_node_id)
 
         if not winner_agv:
             return Response(
@@ -53,7 +57,11 @@ class TaskViewSet(viewsets.ViewSet):
 
         # Call Scheduler to process
         scheduler = Scheduler()
-        result = scheduler.create_transport_order(winner_agv.serial_number, target_node_id)
+        result = scheduler.create_transport_order(
+            winner_agv.serial_number, 
+            pickup_node_id, 
+            delivery_node_id
+        )
 
         if result['success']:
             result["winner_agv"] = winner_agv.serial_number

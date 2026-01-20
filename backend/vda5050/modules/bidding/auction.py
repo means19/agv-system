@@ -46,13 +46,14 @@ class AuctionCoordinator:
         logger.debug(f"Found {agvs.count()} available AGVs")
         return agvs
     
-    def collect_bids(self, agvs, target_node_id, load_kg=DEFAULT_LOAD_KG):
+    def collect_bids(self, agvs, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG):
         """
         Thu thập bid từ tất cả AGV.
         
         Args:
             agvs: QuerySet hoặc list của AGV instances
-            target_node_id: Node đích
+            pickup_node_id: Node lấy hàng
+            delivery_node_id: Node giao hàng (nếu None, chỉ đi đến pickup)
             load_kg: Tải trọng
             
         Returns:
@@ -60,11 +61,14 @@ class AuctionCoordinator:
         """
         bids = []
         
-        logger.info(f"Collecting bids for Target={target_node_id}, Load={load_kg}kg")
+        if delivery_node_id:
+            logger.info(f"Collecting bids for Pickup={pickup_node_id} -> Delivery={delivery_node_id}, Load={load_kg}kg")
+        else:
+            logger.info(f"Collecting bids for Target={pickup_node_id}, Load={load_kg}kg")
         
         for agv in agvs:
             bid_result = self.bid_calculator.calculate_full_bid(
-                agv, target_node_id, load_kg
+                agv, pickup_node_id, delivery_node_id, load_kg
             )
             
             if bid_result:
@@ -106,12 +110,13 @@ class AuctionCoordinator:
         
         return winner_agv, winner_details
     
-    def run_auction(self, target_node_id, load_kg=DEFAULT_LOAD_KG):
+    def run_auction(self, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG):
         """
         Chạy toàn bộ quy trình đấu giá (main entry point).
         
         Args:
-            target_node_id: Node đích của task
+            pickup_node_id: Node lấy hàng
+            delivery_node_id: Node giao hàng (nếu None, chỉ đi đến pickup)
             load_kg: Tải trọng
             
         Returns:
@@ -120,7 +125,10 @@ class AuctionCoordinator:
                 - error_message: None nếu thành công, string mô tả lỗi nếu thất bại
         """
         logger.info(f"========== START AUCTION ==========")
-        logger.info(f"Target: {target_node_id}")
+        if delivery_node_id:
+            logger.info(f"Pickup: {pickup_node_id}, Delivery: {delivery_node_id}")
+        else:
+            logger.info(f"Target: {pickup_node_id}")
         logger.info(f"Load: {load_kg}kg")
         logger.info(f"======================================")
         
@@ -133,7 +141,7 @@ class AuctionCoordinator:
             return None, error_msg
         
         # Bước 2: Thu thập bids
-        bids = self.collect_bids(agvs, target_node_id, load_kg)
+        bids = self.collect_bids(agvs, pickup_node_id, delivery_node_id, load_kg)
         
         if not bids:
             error_msg = "No reachable AGV"
@@ -159,12 +167,13 @@ class AuctionCoordinator:
         
         return winner_agv, None
     
-    def run_auction_with_details(self, target_node_id, load_kg=DEFAULT_LOAD_KG):
+    def run_auction_with_details(self, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG):
         """
         Chạy auction và trả về kết quả chi tiết (bao gồm cả tất cả bids).
         
         Args:
-            target_node_id: Node đích
+            pickup_node_id: Node lấy hàng
+            delivery_node_id: Node giao hàng (nếu None, chỉ đi đến pickup)
             load_kg: Tải trọng
             
         Returns:
@@ -185,7 +194,7 @@ class AuctionCoordinator:
                 'error': 'No AGVs online'
             }
         
-        bids = self.collect_bids(agvs, target_node_id, load_kg)
+        bids = self.collect_bids(agvs, pickup_node_id, delivery_node_id, load_kg)
         
         if not bids:
             return {

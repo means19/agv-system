@@ -7,9 +7,14 @@ class Scheduler:
     def __init__(self):
         self.graph_engine = GraphEngine()
 
-    def create_transport_order(self, serial_number, target_node_id):
+    def create_transport_order(self, serial_number, pickup_node_id, delivery_node_id):
         """
-        Create transport order for AGV to move to the target node.
+        Create transport order for AGV: current -> pickup -> delivery.
+        
+        Args:
+            serial_number: AGV serial number
+            pickup_node_id: Node to pick up the load
+            delivery_node_id: Node to deliver the load
         """
         # 1. Get AGV info and current position
         try:
@@ -21,10 +26,6 @@ class Scheduler:
                 return {"success": False, "error": "AGV has no position data (State)"}
             
             start_node_id = last_state.last_node_id
-            
-            # If the AGV is already at the target, do nothing
-            if start_node_id == target_node_id:
-                return {"success": False, "error": "AGV is already at the target node"}
 
         except AGV.DoesNotExist:
             return {"success": False, "error": "AGV does not exist"}
@@ -55,17 +56,22 @@ class Scheduler:
             start_node_id = last_state.last_node_id
             initial_status = 'CREATED' # Sẽ được gửi đi ngay
 
-        # Nếu điểm xuất phát trùng đích đến
-        if start_node_id == target_node_id:
-            return {"success": False, "error": f"AGV đã ở (hoặc sẽ đến) {target_node_id}"}
+        # 3. Calculate path with 2 legs: current -> pickup -> delivery
+        # Leg 1: current position -> pickup node
+        nodes_leg1, edges_leg1 = self.graph_engine.get_path(start_node_id, pickup_node_id)
+        if not nodes_leg1:
+            return {"success": False, "error": f"Path not found from {start_node_id} to {pickup_node_id}"}
         
-        # 3. Calculate path (Baseline Calculation)
-        nodes, edges = self.graph_engine.get_path(start_node_id, target_node_id)
+        # Leg 2: pickup node -> delivery node
+        nodes_leg2, edges_leg2 = self.graph_engine.get_path(pickup_node_id, delivery_node_id)
+        if not nodes_leg2:
+            return {"success": False, "error": f"Path not found from {pickup_node_id} to {delivery_node_id}"}
         
-        if not nodes:
-            return {"success": False, "error": f"Path not found from {start_node_id} to {target_node_id}"}
+        # Merge paths (remove duplicate pickup node)
+        all_nodes = nodes_leg1 + nodes_leg2[1:]  # Skip first node of leg2 (duplicate)
+        all_edges = edges_leg1 + edges_leg2
 
-        # 5. Create new Order in Database
+        # 4. Create new Order in Database
         # (Signal post_save will automatically send MQTT)
         new_order_id = f"ORD_{uuid.uuid4().hex[:8].upper()}"
         
@@ -77,8 +83,8 @@ class Scheduler:
             zone_set_id="zone_1",
             agv=agv,
             status=initial_status,
-            nodes=nodes, # JSON từ GraphEngine
-            edges=edges  # JSON từ GraphEngine
+            nodes=all_nodes,  # Combined path: current -> pickup -> delivery
+            edges=all_edges   # Combined edges
         )
 
         msg = "Order sent to AGV" if initial_status == 'CREATED' else f"Order added to Queue (Start from {start_node_id})"
@@ -88,5 +94,7 @@ class Scheduler:
             "order_id": new_order_id, 
             "status": initial_status,
             "message": msg,
-            "path": [n['nodeId'] for n in nodes]
+            "pickup_node": pickup_node_id,
+            "delivery_node": delivery_node_id,
+            "path": [n['nodeId'] for n in all_nodes]
         }

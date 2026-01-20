@@ -21,12 +21,29 @@ agv_project/
 │       ├── views.py         # REST API endpoints
 │       ├── signals.py       # MQTT auto-publish
 │       ├── graph_engine.py  # Pathfinding logic
+│       ├── modules/         # Core business logic
+│       │   ├── scheduler.py         # Order creation
+│       │   └── bidding/            # Auction system
+│       │       ├── engine.py       # Bidding engine
+│       │       ├── auction.py      # Auction coordinator
+│       │       └── calculators/    # Cost calculations
 │       └── management/
 │           └── commands/
-│               └── run_mqtt_listener.py  # MQTT worker
+│               ├── run_mqtt_listener.py  # MQTT worker
+│               ├── setup_test_agvs.py    # AGV setup
+│               └── setup_test_graph.py   # Graph setup
+├── tests/                   # Testing framework
+│   ├── README.md            # Testing guide
+│   ├── simulators/
+│   │   ├── mock_agv.py              # Single AGV simulator
+│   │   └── multi_mock_agv.py        # Multi-AGV fleet
+│   └── load_balancing/
+│       └── test_agv_load_balancing.py  # Load balance tests
+├── docs/                    # Documentation
+│   ├── MULTI_AGV_GUIDE.md   # Multi-AGV simulator guide
+│   └── BIDDING_SYSTEM.md    # Bidding algorithm docs
 ├── mosquitto/               # MQTT broker config
-├── docker-compose.yml       # Service orchestration
-└── mock_agv.py              # AGV simulator for testing
+└── docker-compose.yml       # Service orchestration
 ```
 
 ## 🚀 Quick Start
@@ -104,7 +121,7 @@ python mock_agv.py
 - PostgreSQL 15
 - Paho MQTT 1.6+
 - NetworkX (graph algorithms)
-- Docker & Docker Compose
+- Docker
 
 ## 📄 License
 

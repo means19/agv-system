@@ -30,31 +30,31 @@ class Scheduler:
         except AGV.DoesNotExist:
             return {"success": False, "error": "AGV does not exist"}
 
-        # 2. Xác định điểm xuất phát (Start Node)
-        # Tìm xem có lệnh nào đang chạy hoặc đang chờ không?
+        # 2. Define start node for the order:
+        # Define if the AGV is currently busy with an active order. 
+        # If yes, chain the new order to start from the last node of the current order.
         last_active_order = Order.objects.filter(
             agv=agv, 
             status__in=['SENT', 'ACTIVE', 'QUEUED']
         ).order_by('-created_at').first()
 
         if last_active_order:
-            # --- LOGIC MỚI: NỐI ĐUÔI ---
-            # Nếu xe đang bận, điểm xuất phát là điểm cuối của lệnh trước đó
+            # Chaining: Start from the last node of the current active order instead of current position
             try:
                 start_node_id = last_active_order.nodes[-1]['nodeId']
                 initial_status = 'QUEUED'
                 print(f"Chaining order: Start from {start_node_id} (End of Order {last_active_order.order_id})")
             except (IndexError, KeyError, TypeError):
-                # Fallback nếu dữ liệu lệnh cũ bị lỗi
+                # Fallback if the order's nodes data is malformed
                 return {"success": False, "error": "Lỗi dữ liệu Nodes của lệnh trước đó"}
         else:
-            # Nếu xe rảnh, lấy vị trí hiện tại từ State
+            # If no active order, start from current position
             last_state = AGVState.objects.filter(agv=agv).order_by('-timestamp').first()
             if not last_state:
                 return {"success": False, "error": "AGV chưa có dữ liệu vị trí (State)"}
             
             start_node_id = last_state.last_node_id
-            initial_status = 'CREATED' # Sẽ được gửi đi ngay
+            initial_status = 'CREATED' 
 
         # 3. Calculate path with 2 legs: current -> pickup -> delivery
         # Leg 1: current position -> pickup node

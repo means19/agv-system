@@ -45,9 +45,20 @@ class TaskViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Optional: override epsilon per-request for research experiments
+        epsilon = request.data.get('epsilon', None)
+        if epsilon is not None:
+            try:
+                epsilon = float(epsilon)
+            except (TypeError, ValueError):
+                return Response(
+                    {"error": "epsilon must be a number between 0 and 1"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
         # Run Bidding Engine to select the best AGV
         bid_engine = BiddingEngine()
-        winner_agv, error = bid_engine.run_auction(pickup_node_id, delivery_node_id)
+        winner_agv, error = bid_engine.run_auction(pickup_node_id, delivery_node_id, epsilon=epsilon)
 
         if not winner_agv:
             return Response(
@@ -65,6 +76,8 @@ class TaskViewSet(viewsets.ViewSet):
 
         if result['success']:
             result["winner_agv"] = winner_agv.serial_number
+            if epsilon is not None:
+                result["epsilon"] = epsilon
             return Response(result, status=status.HTTP_201_CREATED)
         else:
             return Response(result, status=status.HTTP_400_BAD_REQUEST)

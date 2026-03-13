@@ -42,23 +42,19 @@ class BaselineCalculator:
     
     def calculate_baseline_distance(self, start_node_id, target_node_id):
         """
-        Tính khoảng cách baseline (đường đi ngắn nhất lý tưởng).
+        Tính khoảng cách baseline và số lượt rẽ.
         
-        Args:
-            start_node_id: Node xuất phát
-            target_node_id: Node đích
-            
         Returns:
-            float: Khoảng cách baseline (m), hoặc inf nếu không có đường
+            tuple: (distance_m, num_turns)
         """
-        distance = self.graph_engine.get_path_cost(start_node_id, target_node_id)
+        distance, num_turns = self.graph_engine.get_path_info(start_node_id, target_node_id)
         
         if distance == float('inf'):
             logger.warning(f"No path from {start_node_id} to {target_node_id}")
         else:
-            logger.debug(f"Baseline distance {start_node_id}→{target_node_id}: {distance:.2f}m")
+            logger.debug(f"Baseline {start_node_id}→{target_node_id}: {distance:.2f}m, {num_turns} turns")
         
-        return distance
+        return distance, num_turns
     
     def calculate_baseline_metrics(self, start_node_id, target_node_id, load_kg=DEFAULT_LOAD_KG):
         """
@@ -72,18 +68,14 @@ class BaselineCalculator:
         Returns:
             tuple: (baseline_energy_kj, baseline_time_s)
         """
-        # Lấy khoảng cách baseline
-        distance = self.calculate_baseline_distance(start_node_id, target_node_id)
+        distance, num_turns = self.calculate_baseline_distance(start_node_id, target_node_id)
         
-        # Nếu không có đường đi, trả về giá trị fallback
         if distance == float('inf'):
             logger.warning(f"Using fallback baseline values for {start_node_id}→{target_node_id}")
             return FALLBACK_NORM_ENERGY_KJ, FALLBACK_NORM_TFT_SEC
         
-        # Tính metrics dựa trên baseline distance
-        energy_kj, time_s = self.transport_calculator.calculate_metrics(distance, load_kg)
+        energy_kj, time_s = self.transport_calculator.calculate_metrics(distance, load_kg, num_turns)
         
-        # Validate và đảm bảo không có giá trị 0 (tránh chia cho 0)
         validated_energy, validated_time = self.transport_calculator.validate_metrics(energy_kj, time_s)
         
         logger.debug(f"Baseline metrics {start_node_id}→{target_node_id}: "
@@ -137,9 +129,9 @@ class BaselineCalculator:
                 'norm_time': float
             }
         """
-        # Tính metrics thực tế
+        # Tính metrics thực tế (num_turns=0 vì actual_distance_m là tổng đã tính sẵn)
         actual_energy, actual_time = self.transport_calculator.calculate_metrics(
-            actual_distance_m, load_kg
+            actual_distance_m, load_kg, num_turns=0
         )
         
         # Tính baseline

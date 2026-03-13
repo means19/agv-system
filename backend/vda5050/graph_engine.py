@@ -47,6 +47,26 @@ class GraphEngine:
             print(f"Error calculating cost: {e}")
             return float('inf')
 
+    def get_path_info(self, start_node, end_node):
+        """
+        Return (distance, num_turns) for the shortest path.
+        num_turns = number of intermediate nodes (direction-change points).
+        """
+        try:
+            path_nodes = nx.shortest_path(
+                self.graph, source=start_node, target=end_node, weight='weight'
+            )
+            distance = nx.shortest_path_length(
+                self.graph, source=start_node, target=end_node, weight='weight'
+            )
+            num_turns = max(0, len(path_nodes) - 2)
+            return distance, num_turns
+        except (nx.NetworkXNoPath, nx.NodeNotFound):
+            return float('inf'), 0
+        except Exception as e:
+            print(f"Error in get_path_info: {e}")
+            return float('inf'), 0
+
     def get_path(self, start_node_id, end_node_id):
         """
         Algorithm 1: Calculate Baseline (using Dijkstra).

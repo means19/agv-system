@@ -46,7 +46,7 @@ class AuctionCoordinator:
         logger.debug(f"Found {agvs.count()} available AGVs")
         return agvs
     
-    def collect_bids(self, agvs, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG):
+    def collect_bids(self, agvs, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG, epsilon=None):
         """
         Thu thập bid từ tất cả AGV.
         
@@ -55,6 +55,7 @@ class AuctionCoordinator:
             pickup_node_id: Node lấy hàng
             delivery_node_id: Node giao hàng (nếu None, chỉ đi đến pickup)
             load_kg: Tải trọng
+            epsilon: Override hybrid parameter (None = use default)
             
         Returns:
             list: [(bid_score, agv, bid_details), ...]
@@ -62,13 +63,13 @@ class AuctionCoordinator:
         bids = []
         
         if delivery_node_id:
-            logger.info(f"Collecting bids for Pickup={pickup_node_id} -> Delivery={delivery_node_id}, Load={load_kg}kg")
+            logger.info(f"Collecting bids for Pickup={pickup_node_id} -> Delivery={delivery_node_id}, Load={load_kg}kg, ε={epsilon}")
         else:
-            logger.info(f"Collecting bids for Target={pickup_node_id}, Load={load_kg}kg")
+            logger.info(f"Collecting bids for Target={pickup_node_id}, Load={load_kg}kg, ε={epsilon}")
         
         for agv in agvs:
             bid_result = self.bid_calculator.calculate_full_bid(
-                agv, pickup_node_id, delivery_node_id, load_kg
+                agv, pickup_node_id, delivery_node_id, load_kg, epsilon=epsilon
             )
             
             if bid_result:
@@ -110,7 +111,7 @@ class AuctionCoordinator:
         
         return winner_agv, winner_details
     
-    def run_auction(self, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG):
+    def run_auction(self, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG, epsilon=None):
         """
         Chạy toàn bộ quy trình đấu giá (main entry point).
         
@@ -118,6 +119,7 @@ class AuctionCoordinator:
             pickup_node_id: Node lấy hàng
             delivery_node_id: Node giao hàng (nếu None, chỉ đi đến pickup)
             load_kg: Tải trọng
+            epsilon: Override hybrid parameter (None = use default)
             
         Returns:
             tuple: (winner_agv, error_message)
@@ -129,7 +131,7 @@ class AuctionCoordinator:
             logger.info(f"Pickup: {pickup_node_id}, Delivery: {delivery_node_id}")
         else:
             logger.info(f"Target: {pickup_node_id}")
-        logger.info(f"Load: {load_kg}kg")
+        logger.info(f"Load: {load_kg}kg, ε={epsilon if epsilon is not None else 'default'}")
         logger.info(f"======================================")
         
         # Bước 1: Lấy danh sách AGV
@@ -141,7 +143,7 @@ class AuctionCoordinator:
             return None, error_msg
         
         # Bước 2: Thu thập bids
-        bids = self.collect_bids(agvs, pickup_node_id, delivery_node_id, load_kg)
+        bids = self.collect_bids(agvs, pickup_node_id, delivery_node_id, load_kg, epsilon=epsilon)
         
         if not bids:
             error_msg = "No reachable AGV"

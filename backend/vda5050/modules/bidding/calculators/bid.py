@@ -118,53 +118,74 @@ class BidCalculator:
     
     def calculate_wait_cost(self, agv, current_node, load_kg):
         """
-        Tính chi phí chờ (wait cost) nếu AGV đang bận.
-        
-        Args:
-            agv: AGV instance
-            current_node: Node hiện tại của AGV
-            load_kg: Tải trọng dự kiến
-            
+        Tính chi phí chờ tích lũy cho TẤT CẢ order đang pending (SENT/ACTIVE/QUEUED).
+
+        Chain qua từng order theo thứ tự tạo để ước lượng:
+        - Tổng thời gian AGV phải hoàn thành trước khi nhận task mới
+        - Tổng năng lượng dự kiến cho các order đang chờ
+        - Node cuối cùng AGV sẽ ở sau khi hoàn thành tất cả
+
         Returns:
             dict: {
-                'start_node': str,  # Node mà AGV sẽ bắt đầu task mới
-                'wait_time_s': float  # Thời gian phải chờ AGV rảnh
+                'start_node': str,
+                'wait_time_s': float,
+                'queue_energy_kj': float,
+                'num_pending': int,
             }
         """
-        # Kiểm tra xem AGV có đang làm việc không
-        active_order = Order.objects.filter(
-            agv=agv, 
+        pending_orders = Order.objects.filter(
+            agv=agv,
             status__in=['SENT', 'ACTIVE', 'QUEUED']
-        ).last()
-        
-        start_node = current_node
-        wait_time = 0.0
-        
-        if active_order:
+        ).order_by('created_at')
+
+        if not pending_orders.exists():
+            return {
+                'start_node': current_node,
+                'wait_time_s': 0.0,
+                'queue_energy_kj': 0.0,
+                'num_pending': 0,
+            }
+
+        chain_node = current_node
+        total_wait_time = 0.0
+        total_queue_energy = 0.0
+
+        for order in pending_orders:
             try:
-                # AGV đang bận: Phải đợi đến khi hoàn thành task cũ
-                end_node = active_order.nodes[-1]['nodeId']
-                start_node = end_node
-                
-                # Ước tính thời gian còn lại để hoàn thành task cũ
-                remaining_distance = self.graph_engine.get_path_cost(current_node, end_node)
-                
-                if remaining_distance != float('inf'):
-                    _, wait_time = self.transport_calculator.calculate_metrics(
-                        remaining_distance, load_kg
+                if not order.nodes:
+                    continue
+
+                end_node = order.nodes[-1]['nodeId']
+
+                if chain_node == end_node:
+                    continue
+
+                distance, turns = self.graph_engine.get_path_info(chain_node, end_node)
+
+                if distance != float('inf') and distance > 0:
+                    energy, travel_time = self.transport_calculator.calculate_metrics(
+                        distance, load_kg, turns
                     )
-                    logger.debug(f"AGV {agv.serial_number} busy: wait_time={wait_time:.2f}s "
-                               f"to complete {current_node}→{end_node}")
-                else:
-                    logger.warning(f"AGV {agv.serial_number}: Cannot calculate wait time "
-                                 f"(no path {current_node}→{end_node})")
+                    total_wait_time += travel_time
+                    total_queue_energy += energy
+
+                chain_node = end_node
+
             except Exception as e:
-                logger.error(f"Error calculating wait cost for {agv.serial_number}: {e}")
-                start_node = current_node
-        
+                logger.error(f"Error calculating queue cost for {agv.serial_number}: {e}")
+                continue
+
+        logger.debug(
+            f"AGV {agv.serial_number} queue: {pending_orders.count()} pending, "
+            f"wait={total_wait_time:.1f}s, energy={total_queue_energy:.2f}kJ, "
+            f"will end at {chain_node}"
+        )
+
         return {
-            'start_node': start_node,
-            'wait_time_s': wait_time
+            'start_node': chain_node,
+            'wait_time_s': total_wait_time,
+            'queue_energy_kj': total_queue_energy,
+            'num_pending': pending_orders.count(),
         }
     
     def calculate_marginal_cost(self, agv, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG):
@@ -203,28 +224,30 @@ class BidCalculator:
         wait_info = self.calculate_wait_cost(agv, current_node, load_kg)
         start_node = wait_info['start_node']
         wait_time = wait_info['wait_time_s']
+        queue_energy = wait_info.get('queue_energy_kj', 0.0)
+        num_pending = wait_info.get('num_pending', 0)
         
         # Bước 4: Tính chi phí cho từng chặng
         if delivery_node_id:
             # 2-leg trip: current -> pickup -> delivery
             # Leg 1: current -> pickup (không mang hàng)
-            distance_leg1 = self.graph_engine.get_path_cost(start_node, pickup_node_id)
+            distance_leg1, turns_leg1 = self.graph_engine.get_path_info(start_node, pickup_node_id)
             if distance_leg1 == float('inf'):
                 logger.warning(f"AGV {agv.serial_number}: No path {start_node}→{pickup_node_id}")
                 return None
             
             energy_leg1, time_leg1 = self.transport_calculator.calculate_metrics(
-                distance_leg1, 0  # Không mang hàng
+                distance_leg1, 0, turns_leg1  # Không mang hàng
             )
             
             # Leg 2: pickup -> delivery (mang hàng)
-            distance_leg2 = self.graph_engine.get_path_cost(pickup_node_id, delivery_node_id)
+            distance_leg2, turns_leg2 = self.graph_engine.get_path_info(pickup_node_id, delivery_node_id)
             if distance_leg2 == float('inf'):
                 logger.warning(f"AGV {agv.serial_number}: No path {pickup_node_id}→{delivery_node_id}")
                 return None
             
             energy_leg2, time_leg2 = self.transport_calculator.calculate_metrics(
-                distance_leg2, load_kg  # Mang hàng
+                distance_leg2, load_kg, turns_leg2  # Mang hàng
             )
             
             # Tổng chi phí
@@ -238,7 +261,7 @@ class BidCalculator:
             )
         else:
             # Single-leg trip: current -> pickup
-            actual_distance = self.graph_engine.get_path_cost(start_node, pickup_node_id)
+            actual_distance, actual_turns = self.graph_engine.get_path_info(start_node, pickup_node_id)
             
             if actual_distance == float('inf'):
                 logger.warning(f"AGV {agv.serial_number}: No path {start_node}→{pickup_node_id}")
@@ -246,7 +269,7 @@ class BidCalculator:
             
             # Tính metrics thực tế
             energy_travel, time_travel = self.transport_calculator.calculate_metrics(
-                actual_distance, load_kg
+                actual_distance, load_kg, actual_turns
             )
             
             # Marginal time = wait time + travel time
@@ -265,46 +288,83 @@ class BidCalculator:
             'norm_time': baseline_result['norm_time'],
             'battery': battery,
             'battery_penalty': battery_check['penalty_factor'],
+            'queue_time_s': wait_time,
+            'queue_energy_kj': queue_energy,
+            'num_pending': num_pending,
             'is_valid': True
         }
     
-    def calculate_bid_score(self, marginal_cost_result):
+    def calculate_bid_score(self, marginal_cost_result, epsilon=None):
         """
-        Tính điểm bid từ marginal cost (Hybrid Objective).
-        
+        Tính điểm bid từ marginal cost (Hybrid Objective / SSI-DMAS).
+
+        - MiniSum: chi phí biên của task mới (xe nào rẻ nhất)
+        - MiniMax: tổng tải tích lũy (queued + task mới, xe nào ít việc nhất)
+        - Hybrid:  ε × MiniSum + (1−ε) × MiniMax
+
         Args:
-            marginal_cost_result: Kết quả từ calculate_marginal_cost()
-            
+            marginal_cost_result: dict from calculate_marginal_cost
+            epsilon: Override hybrid parameter (None = use default from constant.py)
+
         Returns:
             float: Điểm bid (càng thấp càng tốt)
         """
         if not marginal_cost_result or not marginal_cost_result.get('is_valid'):
             return float('inf')
-        
+
         norm_energy = marginal_cost_result['norm_energy']
         norm_time = marginal_cost_result['norm_time']
         battery_penalty = marginal_cost_result.get('battery_penalty', 1.0)
-        
-        # MiniSum: Ưu tiên hiệu quả biên (xe tốn ít công sức nhất)
+        queue_time = marginal_cost_result.get('queue_time_s', 0.0)
+        queue_energy = marginal_cost_result.get('queue_energy_kj', 0.0)
+        time_marginal = marginal_cost_result.get('time_marginal', 0.0)
+        energy_marginal = marginal_cost_result.get('energy_marginal', 0.0)
+
+        # Resolve epsilon: per-request override > constant.py default
+        eps = epsilon if epsilon is not None else EPSILON
+
+        # MiniSum: chi phí biên (chỉ task mới, normalized)
         bid_minisum = (K_ENERGY * norm_energy) + (K_TIME * norm_time)
-        
-        # MiniMax: Ưu tiên cân bằng tải (xe đang ít việc nhất)
-        # Đơn giản hóa: Dùng chính bid_minisum làm đại diện
-        # (Logic chuẩn sẽ cần tổng energy tích lũy của xe)
-        bid_minimax = bid_minisum
-        
-        # Hybrid: Kết hợp cả hai
-        bid_final = (EPSILON * bid_minisum) + ((1 - EPSILON) * bid_minimax)
-        
+
+        # MiniMax: tổng tải dự kiến (queued + task mới)
+        # Tách travel_time thuần (không bao gồm queue wait) để tính baseline chính xác
+        travel_time = time_marginal - queue_time  # pure travel time for new task
+
+        # Normalize queue_time theo cùng thang đo với norm_time
+        if travel_time > 0 and norm_time > 0:
+            baseline_time_unit = travel_time / norm_time
+            norm_queue_time = queue_time / baseline_time_unit
+        else:
+            norm_queue_time = 0.0
+
+        # Normalize queue_energy theo cùng thang đo với norm_energy
+        if energy_marginal > 0 and norm_energy > 0:
+            baseline_energy_unit = energy_marginal / norm_energy
+            norm_queue_energy = queue_energy / baseline_energy_unit
+        else:
+            norm_queue_energy = 0.0
+
+        bid_minimax = (
+            K_ENERGY * (norm_energy + norm_queue_energy)
+            + K_TIME * (norm_time + norm_queue_time)
+        )
+
+        # Hybrid: kết hợp cả hai
+        bid_final = (eps * bid_minisum) + ((1 - eps) * bid_minimax)
+
         # Áp dụng penalty từ pin
         bid_final *= battery_penalty
-        
-        logger.debug(f"Bid score: MiniSum={bid_minisum:.4f}, MiniMax={bid_minimax:.4f}, "
-                    f"Hybrid={bid_final:.4f} (penalty={battery_penalty})")
-        
+
+        logger.info(
+            f"Bid score: MiniSum={bid_minisum:.4f}, MiniMax={bid_minimax:.4f}, "
+            f"Hybrid={bid_final:.4f} (ε={eps}, penalty={battery_penalty}, "
+            f"queue_time={queue_time:.1f}s, norm_qT={norm_queue_time:.2f}, "
+            f"norm_qE={norm_queue_energy:.2f})"
+        )
+
         return bid_final
     
-    def calculate_full_bid(self, agv, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG):
+    def calculate_full_bid(self, agv, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG, epsilon=None):
         """
         Tính toán bid đầy đủ cho một AGV (all-in-one).
         
@@ -313,6 +373,7 @@ class BidCalculator:
             pickup_node_id: Node lấy hàng
             delivery_node_id: Node giao hàng (nếu None, chỉ đi đến pickup)
             load_kg: Tải trọng
+            epsilon: Override hybrid parameter (None = use default)
             
         Returns:
             dict: {
@@ -331,7 +392,7 @@ class BidCalculator:
             return None
         
         # Tính bid score
-        bid_score = self.calculate_bid_score(marginal_result)
+        bid_score = self.calculate_bid_score(marginal_result, epsilon=epsilon)
         
         if bid_score == float('inf'):
             logger.info(f"AGV {agv.serial_number}: Cannot bid (infinite score)")

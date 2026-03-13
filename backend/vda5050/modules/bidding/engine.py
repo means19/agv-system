@@ -91,7 +91,7 @@ class BiddingEngine:
     
     # ==================== PRIMARY PUBLIC METHODS ====================
     
-    def run_auction(self, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG):
+    def run_auction(self, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG, epsilon=None):
         """
         Tổ chức đấu giá và chọn xe thắng cuộc (Main entry point).
         
@@ -99,13 +99,14 @@ class BiddingEngine:
             pickup_node_id: Node lấy hàng (pickup)
             delivery_node_id: Node giao hàng (delivery). Nếu None, chỉ đi đến pickup_node_id
             load_kg: Tải trọng (kg)
+            epsilon: Override hybrid parameter (None = use default from constant.py)
             
         Returns:
             tuple: (winner_agv, error_message)
                 - winner_agv: AGV instance thắng cuộc, hoặc None nếu thất bại
                 - error_message: None nếu thành công, string nếu có lỗi
         """
-        return self.auction_coordinator.run_auction(pickup_node_id, delivery_node_id, load_kg)
+        return self.auction_coordinator.run_auction(pickup_node_id, delivery_node_id, load_kg, epsilon=epsilon)
     
     def run_auction_with_details(self, target_node_id, load_kg=DEFAULT_LOAD_KG):
         """

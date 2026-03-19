@@ -5,11 +5,11 @@ from vda5050.views import AGVViewSet, OrderViewSet, TaskViewSet
 
 # Tạo Router tự động sinh URL
 router = DefaultRouter()
-router.register(r'agvs', AGVViewSet)
-router.register(r'orders', OrderViewSet)
-router.register(r'tasks', TaskViewSet, basename='tasks')
+router.register(r"agvs", AGVViewSet)
+router.register(r"orders", OrderViewSet)
+router.register(r"tasks", TaskViewSet, basename="tasks")
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('api/', include(router.urls)),
+    path("admin/", admin.site.urls),
+    path("api/", include(router.urls)),
 ]

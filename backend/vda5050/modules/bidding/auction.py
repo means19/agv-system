@@ -6,7 +6,7 @@ Chịu trách nhiệm tổ chức auction process và quyết định winner.
 import logging
 from vda5050.models import AGV
 from .calculators.bid import BidCalculator
-from ..constant import DEFAULT_LOAD_KG
+from ..constant import DEFAULT_LOAD_KG, AUCTION_ALGORITHM
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class AuctionCoordinator:
         logger.debug(f"Found {agvs.count()} available AGVs")
         return agvs
     
-    def collect_bids(self, agvs, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG):
+    def collect_bids(self, agvs, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG, epsilon=None):
         """
         Thu thập bid từ tất cả AGV.
         
@@ -55,33 +55,58 @@ class AuctionCoordinator:
             pickup_node_id: Node lấy hàng
             delivery_node_id: Node giao hàng (nếu None, chỉ đi đến pickup)
             load_kg: Tải trọng
+            epsilon: Override hybrid parameter (None = use default)
             
         Returns:
             list: [(bid_score, agv, bid_details), ...]
         """
         bids = []
+
+        algorithm = AUCTION_ALGORITHM
         
         if delivery_node_id:
-            logger.info(f"Collecting bids for Pickup={pickup_node_id} -> Delivery={delivery_node_id}, Load={load_kg}kg")
+            logger.info(
+                f"Collecting bids for Pickup={pickup_node_id} -> Delivery={delivery_node_id}, "
+                f"Load={load_kg}kg, ε={epsilon}, Algorithm={algorithm}"
+            )
         else:
-            logger.info(f"Collecting bids for Target={pickup_node_id}, Load={load_kg}kg")
+            logger.info(
+                f"Collecting bids for Target={pickup_node_id}, Load={load_kg}kg, "
+                f"ε={epsilon}, Algorithm={algorithm}"
+            )
         
         for agv in agvs:
-            bid_result = self.bid_calculator.calculate_full_bid(
-                agv, pickup_node_id, delivery_node_id, load_kg
-            )
+            if algorithm == 'SSI_MARGINAL':
+                bid_result = self.bid_calculator.calculate_full_bid(
+                    agv, pickup_node_id, delivery_node_id, load_kg, epsilon=epsilon
+                )
+            elif algorithm == 'GREEDY_DISTANCE':
+                bid_result = self.bid_calculator.calculate_greedy_distance_bid(
+                    agv, pickup_node_id
+                )
+            else:
+                raise ValueError(f"Unknown AUCTION_ALGORITHM: {algorithm}")
             
-            if bid_result:
+            if bid_result and bid_result.get('is_valid', True):
                 bid_score = bid_result['bid_final']
                 bids.append((bid_score, agv, bid_result))
-                
-                logger.info(
-                    f"   🤖 {agv.serial_number}: "
-                    f"Bid={bid_score:.4f} "
-                    f"(E={bid_result['energy_marginal']:.2f}kJ, "
-                    f"T={bid_result['time_marginal']:.2f}s, "
-                    f"Bat={bid_result['battery']}%)"
-                )
+
+                if algorithm == 'SSI_MARGINAL':
+                    logger.info(
+                        f"   🤖 {agv.serial_number}: "
+                        f"Bid={bid_score:.4f} "
+                        f"(E={bid_result['energy_marginal']:.2f}kJ, "
+                        f"T={bid_result['time_marginal']:.2f}s, "
+                        f"Bat={bid_result['battery']}%)"
+                    )
+                else:
+                    logger.info(
+                        f"   🤖 {agv.serial_number}: "
+                        f"Bid={bid_score:.4f} "
+                        f"(Dist={bid_result['distance_to_pickup_m']:.2f}m, "
+                        f"Start={bid_result['start_node']}, "
+                        f"Bat={bid_result['battery']}%)"
+                    )
             else:
                 logger.info(f"   🤖 {agv.serial_number}: Cannot bid (Inf cost / Constraints)")
         
@@ -110,7 +135,7 @@ class AuctionCoordinator:
         
         return winner_agv, winner_details
     
-    def run_auction(self, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG):
+    def run_auction(self, pickup_node_id, delivery_node_id=None, load_kg=DEFAULT_LOAD_KG, epsilon=None):
         """
         Chạy toàn bộ quy trình đấu giá (main entry point).
         
@@ -118,19 +143,23 @@ class AuctionCoordinator:
             pickup_node_id: Node lấy hàng
             delivery_node_id: Node giao hàng (nếu None, chỉ đi đến pickup)
             load_kg: Tải trọng
+            epsilon: Override hybrid parameter (None = use default)
             
         Returns:
             tuple: (winner_agv, error_message)
                 - winner_agv: AGV instance thắng cuộc, hoặc None nếu thất bại
                 - error_message: None nếu thành công, string mô tả lỗi nếu thất bại
         """
-        logger.info(f"========== START AUCTION ==========")
+        logger.info("========== START AUCTION ==========")
         if delivery_node_id:
             logger.info(f"Pickup: {pickup_node_id}, Delivery: {delivery_node_id}")
         else:
             logger.info(f"Target: {pickup_node_id}")
-        logger.info(f"Load: {load_kg}kg")
-        logger.info(f"======================================")
+        logger.info(
+            f"Load: {load_kg}kg, ε={epsilon if epsilon is not None else 'default'}, "
+            f"Algorithm={AUCTION_ALGORITHM}"
+        )
+        logger.info("======================================")
         
         # Bước 1: Lấy danh sách AGV
         agvs = self.get_available_agvs()
@@ -141,7 +170,7 @@ class AuctionCoordinator:
             return None, error_msg
         
         # Bước 2: Thu thập bids
-        bids = self.collect_bids(agvs, pickup_node_id, delivery_node_id, load_kg)
+        bids = self.collect_bids(agvs, pickup_node_id, delivery_node_id, load_kg, epsilon=epsilon)
         
         if not bids:
             error_msg = "No reachable AGV"
@@ -157,13 +186,16 @@ class AuctionCoordinator:
             return None, error_msg
         
         # Log kết quả chi tiết
-        logger.info(f"======================================")
+        logger.info("======================================")
         logger.info(f"   Auction Result: {winner_agv.serial_number}")
         logger.info(f"   Bid Score: {winner_details['bid_final']:.4f}")
-        logger.info(f"   Energy: {winner_details['energy_marginal']:.2f}kJ")
-        logger.info(f"   Time: {winner_details['time_marginal']:.2f}s")
+        if AUCTION_ALGORITHM == 'SSI_MARGINAL':
+            logger.info(f"   Energy: {winner_details['energy_marginal']:.2f}kJ")
+            logger.info(f"   Time: {winner_details['time_marginal']:.2f}s")
+        elif AUCTION_ALGORITHM == 'GREEDY_DISTANCE':
+            logger.info(f"   Distance to Pickup: {winner_details['distance_to_pickup_m']:.2f}m")
         logger.info(f"   Battery: {winner_details['battery']}%")
-        logger.info(f"========== END AUCTION ==========")
+        logger.info("========== END AUCTION ==========")
         
         return winner_agv, None
     

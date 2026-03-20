@@ -12,7 +12,7 @@ MQTT_PORT = int(os.environ.get("MQTT_PORT", "1884"))
 # ==================== VDA5050 Protocol ====================
 VDA_VERSION = "2.1.0"
 MANUFACTURER = "TestManufacturer"
-MAP_ID = "default_map"
+MAP_ID = "large_factory_1"
 
 # ==================== Server API ====================
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://127.0.0.1:8000/api")

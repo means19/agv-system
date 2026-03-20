@@ -169,12 +169,26 @@ class InstantAction(models.Model):
 # ============================================
 class GraphNode(models.Model):
     """Store landmark points on the map (e.g., Charging Station, Warehouse A, Warehouse B...)"""
+    # Định nghĩa các loại Node
+    class NodeType(models.TextChoices):
+        DEFAULT = 'DEFAULT', _('Default / Transit') 
+        PICKUP = 'PICKUP', _('Pickup Station')      
+        DELIVERY = 'DELIVERY', _('Delivery Station')
+        CHARGING = 'CHARGING', _('Charging Station')
+
     node_id = models.CharField(max_length=100, unique=True, help_text="Unique identifier for the point")
     map_id = models.CharField(max_length=100, default="map_1")
     x = models.FloatField()
     y = models.FloatField()
     theta = models.FloatField(default=0.0, help_text="Orientation angle of the vehicle at this point")
     description = models.CharField(max_length=255, blank=True)
+
+    node_type = models.CharField(
+        max_length=20,
+        choices=NodeType.choices,
+        default=NodeType.DEFAULT,
+        help_text="Type of node used for Task Chaining and Battery constraints"
+    )
 
     def __str__(self):
         return f"{self.node_id} ({self.x}, {self.y})"

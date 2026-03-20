@@ -24,6 +24,11 @@ K_TIME = 0.5            # Trọng số thời gian
 # epsilon = 0: Pure MiniMax (Cân bằng tải)
 EPSILON = 0.8
 
+# Auction strategy feature flag
+# 'SSI_MARGINAL': Existing SSI marginal-cost algorithm (default)
+# 'GREEDY_DISTANCE': Baseline nearest-neighbor by distance to pickup
+AUCTION_ALGORITHM = 'GREEDY_DISTANCE'  # Change to 'SSI_MARGINAL' to use the original algorithm
+
 # System Default
 DEFAULT_LOAD_KG = 50.0  # Giả sử tải trọng trung bình nếu không biết
 

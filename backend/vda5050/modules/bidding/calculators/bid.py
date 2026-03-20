@@ -115,6 +115,70 @@ class BidCalculator:
                 'is_acceptable': True,
                 'penalty_factor': 1.0
             }
+
+    def calculate_greedy_distance_bid(self, agv, pickup_node_id):
+        """
+        Baseline bid: Greedy Nearest Neighbor theo khoảng cách đến pickup.
+
+        Rules:
+        - Chỉ xét distance từ vị trí dự kiến của AGV tới pickup
+        - Không cộng pickup->delivery
+        - Bỏ qua penalty trừ khi pin < 10% thì loại AGV
+
+        Args:
+            agv: AGV instance
+            pickup_node_id: Node lấy hàng
+
+        Returns:
+            dict | None: {
+                'bid_final': float,
+                'distance_to_pickup_m': float,
+                'battery': float,
+                'start_node': str,
+                'is_valid': bool,
+            }
+        """
+        state = self.get_agv_current_state(agv)
+        if not state or not state['is_valid']:
+            return None
+
+        battery = state['battery']
+        if battery < 10.0:
+            logger.info(f"AGV {agv.serial_number}: Greedy reject (battery={battery}%)")
+            return {
+                'bid_final': float('inf'),
+                'distance_to_pickup_m': float('inf'),
+                'battery': battery,
+                'start_node': state['current_node'],
+                'is_valid': False,
+            }
+
+        # Use projected node after pending queue as the nearest-neighbor start point.
+        wait_info = self.calculate_wait_cost(agv, state['current_node'], DEFAULT_LOAD_KG)
+        start_node = wait_info.get('start_node', state['current_node'])
+
+        try:
+            distance = self.graph_engine.get_path_cost(start_node, pickup_node_id)
+        except Exception as e:
+            logger.error(f"Greedy distance error for {agv.serial_number}: {e}")
+            return None
+
+        if distance == float('inf'):
+            return {
+                'bid_final': float('inf'),
+                'distance_to_pickup_m': float('inf'),
+                'battery': battery,
+                'start_node': start_node,
+                'is_valid': False,
+            }
+
+        return {
+            'bid_final': distance,
+            'distance_to_pickup_m': distance,
+            'battery': battery,
+            'start_node': start_node,
+            'is_valid': True,
+        }
     
     def calculate_wait_cost(self, agv, current_node, load_kg):
         """

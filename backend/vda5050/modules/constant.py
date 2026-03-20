@@ -11,10 +11,6 @@ TURN_TIME_AVG_SEC = 2.0      # Thời gian quay đầu trung bình (s)
 # Backward-compatible alias
 AGV_SPEED_MPS = AGV_VELOCITY_MPS
 
-# --- Legacy Cost Constants (kept for reference) ---
-C_BASE = 0.05           # kJ/m (Năng lượng tiêu thụ cơ bản trên mỗi mét)
-C_LOAD_COEFF = 0.002    # kJ/(kg·m) (Hệ số tiêu thụ thêm theo tải trọng)
-
 # Weights cho hàm mục tiêu
 K_ENERGY = 0.5          # Trọng số năng lượng
 K_TIME = 0.5            # Trọng số thời gian
@@ -22,12 +18,12 @@ K_TIME = 0.5            # Trọng số thời gian
 # Hybrid Objective Parameter (SSI-DMAS)
 # epsilon = 1: Pure MiniSum (Tối ưu tổng thể)
 # epsilon = 0: Pure MiniMax (Cân bằng tải)
-EPSILON = 0.8
+EPSILON = 0.5
 
 # Auction strategy feature flag
 # 'SSI_MARGINAL': Existing SSI marginal-cost algorithm (default)
 # 'GREEDY_DISTANCE': Baseline nearest-neighbor by distance to pickup
-AUCTION_ALGORITHM = 'GREEDY_DISTANCE'  # Change to 'SSI_MARGINAL' to use the original algorithm
+AUCTION_ALGORITHM = 'SSI_MARGINAL'
 
 # System Default
 DEFAULT_LOAD_KG = 50.0  # Giả sử tải trọng trung bình nếu không biết

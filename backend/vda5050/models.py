@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.utils.translation import gettext_lazy as _
 
+
 # ============================================
 # FLEET MANAGEMENT
 # ============================================
@@ -10,18 +11,30 @@ class AGV(models.Model):
     Represent a physical AGV.
     Topic MQTT: uagv/v2/{manufacturer}/{serial_number}/...
     """
-    manufacturer = models.CharField(max_length=100, help_text="Manufacturer (e.g., KUKA)")
-    serial_number = models.CharField(max_length=100, help_text="Unique serial number of the AGV")
+
+    manufacturer = models.CharField(
+        max_length=100, help_text="Manufacturer (e.g., KUKA)"
+    )
+    serial_number = models.CharField(
+        max_length=100, help_text="Unique serial number of the AGV"
+    )
     description = models.TextField(blank=True, null=True)
-    
+
     # Connection & Status Information
     is_online = models.BooleanField(default=False, help_text="MQTT connection status")
     last_seen = models.DateTimeField(auto_now=True)
-    protocol_version = models.CharField(max_length=20, blank=True, null=True, help_text="Supported VDA version (e.g., 2.1.0)")
-    current_map_id = models.CharField(max_length=100, blank=True, null=True, help_text="Current map in use by the AGV")
+    protocol_version = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text="Supported VDA version (e.g., 2.1.0)",
+    )
+    current_map_id = models.CharField(
+        max_length=100, blank=True, null=True, help_text="Current map in use by the AGV"
+    )
 
     class Meta:
-        unique_together = ('manufacturer', 'serial_number') # This pair must be unique
+        unique_together = ("manufacturer", "serial_number")  # This pair must be unique
         verbose_name = "AGV"
         verbose_name_plural = "AGV Fleet"
 
@@ -200,7 +213,11 @@ class GraphEdge(models.Model):
     map_id = models.CharField(max_length=100, default="map_1")
     
     # Weight (for shortest path calculation)
-    length = models.FloatField(help_text="Length of the edge (m)")
+    length = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Length of the edge (m) - auto-calculated if not provided",
+    )
     max_velocity = models.FloatField(default=1.0, help_text="Maximum allowed velocity (m/s)")
     
     # Direction (True: one-way, False: two-way)
@@ -211,7 +228,7 @@ class GraphEdge(models.Model):
 
     def save(self, *args, **kwargs):
         # Auto-calculate Euclidean distance if not provided
-        if not self.length:
+        if self.length is None:
             import math
             dx = self.end_node.x - self.start_node.x
             dy = self.end_node.y - self.start_node.y

@@ -57,7 +57,7 @@ class Command(BaseCommand):
                 y=node_data["y"],
                 theta=0,
                 node_type=node_data["type"],
-                map_id="large_factory_1",
+                map_id="map_1",
                 description=f"[{node_data['type']}] Node at ({node_data['x']}, {node_data['y']})"
             )
             created_nodes[node_data["node_id"]] = node
@@ -118,12 +118,12 @@ class Command(BaseCommand):
 
             # Tạo chiều đi (Start -> End)
             GraphEdge.objects.create(
-                start_node=node_start, end_node=node_end, map_id="large_factory_1",
+                start_node=node_start, end_node=node_end, map_id="map_1",
                 length=dist, max_velocity=max_v, is_directed=True
             )
             # Tạo chiều về (End -> Start)
             GraphEdge.objects.create(
-                start_node=node_end, end_node=node_start, map_id="large_factory_1",
+                start_node=node_end, end_node=node_start, map_id="map_1",
                 length=dist, max_velocity=max_v, is_directed=True
             )
             edge_count += 2
